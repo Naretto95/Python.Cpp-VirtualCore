@@ -1,0 +1,17 @@
+.\" Manpage for core.
+.TH man 8 "09 DEC 2020" "1.0" "core man page"
+.SH NAME
+core \- virtual core
+.SH SYNOPSIS
+core [BINARYFILE] [STATEFILE] [-v]
+.SH DESCRIPTION
+Core is a virtual core that executes any ASM binary file given.
+.SH OPTIONS
+.IP -h 
+Display this manual.
+.IP -v 
+Enable verbose mode. 
+.SH BUGS
+No known bugs.
+.SH AUTHOR
+Naretto Lilian, Antoine Delay
