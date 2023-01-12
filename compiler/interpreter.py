@@ -71,7 +71,7 @@ def instr_interpreter(instr):
     """for every instruction : ordered the 32 bits instructions"""
     if instr == 0 : # check if it's null instruction line
         return 0   
-    if instr[0].upper()  in operation_dic :        
+    if instr[0].upper() in operation_dic :        
         op,dest,op1,op2 = operation_dic[instr[0].upper()],check(instr[1]),instr[2],instr[3] 
         if op == 5 :
             if op2.isnumeric() or '0x' in op2:
