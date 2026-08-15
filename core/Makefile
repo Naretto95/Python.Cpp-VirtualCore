@@ -1,22 +1,18 @@
-CP=cp
-CC=g++ -Wall -std=c++17 
-RM=rm 
-PROG=core
-SRC=$(wildcard *.cpp)
-HEAD=$(SRC:.cpp=.h)
-OBJ=$(SRC:.cpp=.o)
-LSTDC-FLAG=-lstdc++fs
+CXX      := g++
+CXXFLAGS := -Wall -Wextra -std=c++17 -O2
+PROG     := core
+SRC      := $(wildcard *.cpp)
+OBJ      := $(SRC:.cpp=.o)
 
-all: run
+.PHONY: all clean
 
-$(PROG) : $(OBJ)
-	$(CC) -o $@ $^ $(LSTDC-FLAG)
+all: $(PROG)
 
-%.o : %.cpp
-	$(CC) -c $^ -o $@ 
+$(PROG): $(OBJ)
+	$(CXX) $(CXXFLAGS) -o $@ $^
 
-run: $(PROG)
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-clean :
-	$(RM) *o 
-	$(RM) $(PROG)
+clean:
+	$(RM) $(OBJ) $(PROG)

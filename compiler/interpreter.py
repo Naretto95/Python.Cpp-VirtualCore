@@ -1,100 +1,109 @@
+"""Encodes parsed instructions into the virtual core's 32-bit binary format.
+
+Data-processing word:  IV:8 | dest:4 | op2:4 | op1:4 | opcode:4 | flag:1 | 0:3
+                        (bits 0-7)  (8-11) (12-15) (16-19)  (20-23)  (24)  (25-31)
+Branch word:            offset:27 | sign:1 | bcc:4
+                        (bits 0-26)  (27)     (28-31)
+
+Both are packed big-endian, matching what core/core.cpp expects on disk.
+"""
+
+from __future__ import annotations
+
 import struct
-operation_dic = {
-    'AND' : 0,
-    'ORR' : 1,
-    'EOR' : 2,
-    'ADD' : 3,
-    'ADC' : 4,
-    'CMP' : 5,
-    'SUB' : 6,
-    'SBC' : 7,
-    'MOV' : 8,
-    'LSH' : 9,
-    'RSH' : 10
+from typing import Tuple
 
+from m_parser import BranchInstruction, Instruction, ParsedLine
+
+OPCODES = {
+    "AND": 0, "ORR": 1, "EOR": 2, "ADD": 3, "ADC": 4,
+    "CMP": 5, "SUB": 6, "SBC": 7, "MOV": 8, "LSH": 9, "RSH": 10,
 }
-branch_dic = {
-    'B' : 8,
-    'BEQ' : 9,
-    'BNE' : 10,
-    'BLE' : 11,
-    'BGE' :12,
-    'BL' : 13,
-    'BG' : 14
- }
 
-register_list = [['r'+str(i), i] for i in range (0,15)]
+BRANCH_CONDITIONS = {
+    "B": 8, "BEQ": 9, "BNE": 10, "BLE": 11, "BGE": 12, "BL": 13, "BG": 14,
+}
+
+REGISTERS = {f"r{i}": i for i in range(16)}
 
 
-def check(op) :
-    """check if operation is a register or not, make sure it's a existing register and return his decimal value """ 
-    if op.isnumeric():
-        return int(op)
-    if '0x' in op:
-        return int(op,16)
-    for register in register_list :
-        if op.lower() == register[0] :
-            return register[1] # 1 for register
-    print("invalid destination register or syntax ")
-    return -1
+class EncodingError(Exception):
+    """Raised when an operand cannot be encoded into the instruction format."""
 
 
-def translator(iv,dest,op2,op1,op,ivf) :
-        """Translate instruction like operation dest, op1, op2 into ordered binary code  """
-        binary = 0
-        binary = int(iv) << 0 | int(dest) << 8 | int(op2) << 12 |int(op1)<<16 | int(op) << 20 | int(ivf) << 24 
-        return struct.pack('>I',binary)
-
-def _branch(offset,bcc):
-    """Translate branch instruction into ordered binary code"""
-    if int(offset) >= 0 :
-        signe = 0
-    elif int(offset) < 0:
-        offset = abs(int(offset))
-        signe = 1
-    binary = int(offset) << 0 | signe << 27 | bcc << 28 
-    return struct.pack('>I',binary)
+def parse_integer(token: str) -> int:
+    """Parse a (possibly negative) decimal or 0x-prefixed hexadecimal integer literal."""
+    negative = token.startswith("-")
+    body = token[1:] if negative else token
+    if body.lower().startswith("0x"):
+        value = int(body, 16)
+    elif body.isdigit():
+        value = int(body)
+    else:
+        raise ValueError(token)
+    return -value if negative else value
 
 
-def interpreter(tab_instr) : 
-    """write the compiled code in a file"""
-    with open ('bin','wb') as f :
-        for instr in tab_instr :
-            if instr == 1:
-                return 1
-            if instr == 0 :
-                continue
-            instr_bin = instr_interpreter(instr)
-            f.write(instr_bin)
+def resolve_register(token: str) -> int:
+    """Resolve a register name (or an explicit numeric register index) to its 4-bit index."""
+    if token.lower() in REGISTERS:
+        return REGISTERS[token.lower()]
+    try:
+        return parse_integer(token)
+    except ValueError:
+        raise EncodingError(f"invalid register: {token!r}") from None
 
-def instr_interpreter(instr):
-    """for every instruction : ordered the 32 bits instructions"""
-    if instr == 0 : # check if it's null instruction line
-        return 0   
-    if instr[0].upper() in operation_dic :        
-        op,dest,op1,op2 = operation_dic[instr[0].upper()],check(instr[1]),instr[2],instr[3] 
-        if op == 5 :
-            if op2.isnumeric() or '0x' in op2:
-                instr_bin =  translator(check(op2),0,0,check(op1),op,1)
-            else: 
-                instr_bin = translator(0,0,check(op2),check(op1),op,0)
-        elif op == 8 :#mov
-            if op2.isnumeric() or '0x' in op2:
-                instr_bin =  translator(check(op2),dest,0,0,op,1)
-            else: 
-                instr_bin = translator(0,dest,check(op2),0,op,0)
-        else : 
-            if op2.isnumeric() or '0x' in op2:
-                instr_bin =  translator(check(op2),dest,0,check(op1),op,1)
-            else:
-                instr_bin = translator(0,dest,check(op2),check(op1),op,0)
-        return instr_bin
-    elif  (instr[0].upper() in branch_dic):
-            instr_bin = _branch(instr[1], branch_dic[instr[0].upper()])
-            return instr_bin
-    else : 
-        return 1
 
-       
-      
+def resolve_second_operand(token: str) -> Tuple[bool, int]:
+    """Resolve the second operand of a data-processing instruction.
 
+    Returns (is_register, value): value is a register index if is_register,
+    otherwise an immediate value.
+    """
+    if token.lower() in REGISTERS:
+        return True, REGISTERS[token.lower()]
+    try:
+        return False, parse_integer(token)
+    except ValueError:
+        raise EncodingError(f"invalid register or immediate value: {token!r}") from None
+
+
+def encode_data_instruction(instr: Instruction) -> bytes:
+    opcode = OPCODES[instr.op.upper()]
+    dest = resolve_register(instr.dest)
+    op1 = resolve_register(instr.op1)
+    is_register, value = resolve_second_operand(instr.op2)
+
+    word = 0
+    word |= (0 if is_register else (value & 0xFF)) << 0
+    word |= dest << 8
+    word |= (value if is_register else 0) << 12
+    word |= op1 << 16
+    word |= opcode << 20
+    word |= (0 if is_register else 1) << 24
+    return struct.pack(">I", word)
+
+
+def encode_branch_instruction(instr: BranchInstruction) -> bytes:
+    condition = BRANCH_CONDITIONS[instr.op.upper()]
+    try:
+        offset = parse_integer(instr.offset)
+    except ValueError:
+        raise EncodingError(f"invalid branch offset: {instr.offset!r}") from None
+
+    sign = 1 if offset < 0 else 0
+    word = abs(offset) << 0 | sign << 27 | condition << 28
+    return struct.pack(">I", word)
+
+
+def encode(instr: ParsedLine) -> bytes:
+    if isinstance(instr, Instruction):
+        return encode_data_instruction(instr)
+    return encode_branch_instruction(instr)
+
+
+def assemble(instructions: list[ParsedLine], output_path: str) -> None:
+    """Encode a list of parsed instructions and write the resulting binary to output_path."""
+    with open(output_path, "wb") as f:
+        for instr in instructions:
+            f.write(encode(instr))

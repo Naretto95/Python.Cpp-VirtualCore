@@ -1,0 +1,11 @@
+# C++ build artifacts
+core/*.o
+core/core
+core/core.exe
+
+# Python
+compiler/__pycache__/
+compiler/*.pyc
+
+# Default compiler output
+compiler/bin
